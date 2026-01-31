@@ -224,6 +224,8 @@ export const getByName = query({
       draws: agent.draws,
       gamesPlayed: agent.gamesPlayed,
       createdAt: agent.createdAt,
+      badges: agent.badges || [],
+      twitter: agent.twitter || null,
     };
   },
 });
