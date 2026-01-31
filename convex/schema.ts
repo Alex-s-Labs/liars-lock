@@ -17,10 +17,15 @@ export default defineSchema({
     nextBonusAt: v.optional(v.number()),
     totalBonusElo: v.optional(v.number()),
     badges: v.optional(v.array(v.string())),
+    // Twitter verification
+    twitter: v.optional(v.string()),
+    verificationCode: v.optional(v.string()),
+    verified: v.optional(v.boolean()),
   })
     .index("by_name", ["name"])
     .index("by_elo", ["elo"])
-    .index("by_apiKeyHash", ["apiKeyHash"]),
+    .index("by_apiKeyHash", ["apiKeyHash"])
+    .index("by_twitter", ["twitter"]),
 
   matches: defineTable({
     player1: v.id("agents"),

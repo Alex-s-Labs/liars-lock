@@ -35,5 +35,10 @@ export async function authenticateAgent(authHeader: string | null) {
     throw new Error("Invalid API key");
   }
 
+  // Gate: only verified agents (or grandfathered agents without twitter field) can use authenticated endpoints
+  if (agent.twitter && agent.verified !== true) {
+    throw new Error("Agent not verified. Complete Twitter verification first.");
+  }
+
   return agent;
 }

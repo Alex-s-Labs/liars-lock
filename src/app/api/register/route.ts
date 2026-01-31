@@ -5,7 +5,7 @@ import { api } from "../../../../convex/_generated/api";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name } = body;
+    const { name, twitter } = body;
 
     if (!name) {
       return NextResponse.json(
@@ -14,7 +14,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await convexClient.mutation(api.agents.register, { name });
+    if (!twitter) {
+      return NextResponse.json(
+        { error: "Twitter handle is required. Provide your Twitter/X handle for verification." },
+        { status: 400 }
+      );
+    }
+
+    const result = await convexClient.mutation(api.agents.register, { name, twitter });
 
     return NextResponse.json(result);
   } catch (error: any) {
