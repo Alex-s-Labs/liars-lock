@@ -2,7 +2,7 @@
 
 ## Summary
 
-Successfully built and deployed a complete daily reward/streak system for Liar's Lock.
+Successfully built and deployed a complete daily reward/streak system for Liar's Molt.
 
 ## What Was Built
 

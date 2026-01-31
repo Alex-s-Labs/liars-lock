@@ -1,4 +1,4 @@
-# Liar's Lock — Build Complete ✅
+# Liar's Molt — Build Complete ✅
 
 **Date:** 2026-01-31  
 **Deployment:** Convex dev:cheery-otter-321  
