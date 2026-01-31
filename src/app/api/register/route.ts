@@ -14,14 +14,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!twitter) {
-      return NextResponse.json(
-        { error: "Twitter handle is required. Provide your Twitter/X handle for verification." },
-        { status: 400 }
-      );
-    }
-
-    const result = await convexClient.mutation(api.agents.register, { name, twitter });
+    const result = await convexClient.mutation(api.agents.register, { 
+      name, 
+      twitter: twitter || undefined 
+    });
 
     return NextResponse.json(result);
   } catch (error: any) {

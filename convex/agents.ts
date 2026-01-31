@@ -38,11 +38,11 @@ function validateTwitterHandle(handle: string): string {
   return clean.toLowerCase();
 }
 
-// Step 1: Initiate registration (no API key yet)
+// Registration: first 100 agents get instant access, after that Twitter verification required
 export const register = mutation({
   args: {
     name: v.string(),
-    twitter: v.string(),
+    twitter: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Validate name
@@ -50,8 +50,17 @@ export const register = mutation({
       throw new Error("Name must be 2-32 characters");
     }
 
-    // Validate and normalize twitter handle
-    const twitter = validateTwitterHandle(args.twitter);
+    // Count existing agents to determine if open registration is available
+    const allAgents = await ctx.db.query("agents").collect();
+    const openRegistration = allAgents.length < 100;
+
+    // Validate twitter if provided
+    const twitter = args.twitter ? validateTwitterHandle(args.twitter) : undefined;
+
+    // After 100 agents, twitter is required
+    if (!openRegistration && !twitter) {
+      throw new Error("Registration now requires a Twitter handle for verification. Provide a 'twitter' field.");
+    }
 
     // Check if name already exists
     const existing = await ctx.db
@@ -60,8 +69,8 @@ export const register = mutation({
       .first();
 
     if (existing) {
-      // If the agent exists but isn't verified, allow re-registration (update the code)
-      if (existing.verified !== true) {
+      // If the agent exists but isn't verified, allow re-registration
+      if (existing.verified !== true && twitter) {
         const verificationCode = generateVerificationCode();
         await ctx.db.patch(existing._id, {
           twitter,
@@ -76,25 +85,53 @@ export const register = mutation({
       throw new Error("Agent name already taken");
     }
 
-    // Check if twitter handle is already taken by another agent
-    const existingTwitter = await ctx.db
-      .query("agents")
-      .withIndex("by_twitter", (q) => q.eq("twitter", twitter))
-      .first();
+    // Check if twitter handle is already taken (if provided)
+    if (twitter) {
+      const existingTwitter = await ctx.db
+        .query("agents")
+        .withIndex("by_twitter", (q) => q.eq("twitter", twitter))
+        .first();
 
-    if (existingTwitter && existingTwitter.verified === true) {
-      throw new Error("This Twitter handle is already registered to another agent");
+      if (existingTwitter && existingTwitter.verified === true) {
+        throw new Error("This Twitter handle is already registered to another agent");
+      }
     }
-    // If the handle is taken by an unverified agent, that's fine — they didn't finish
 
-    const verificationCode = generateVerificationCode();
-
-    // Check if early adopter (first 100 agents)
-    const allAgents = await ctx.db.query("agents").collect();
-    const isEarlyAdopter = allAgents.length < 100;
-
+    const isEarlyAdopter = openRegistration;
     const startingElo = isEarlyAdopter ? 1225 : 1200;
     const badges = isEarlyAdopter ? ["early_adopter"] : [];
+
+    // First 100 agents: instant API key, no verification needed
+    if (openRegistration) {
+      const apiKey = generateApiKey();
+      const apiKeyHash = await sha256(apiKey);
+
+      await ctx.db.insert("agents", {
+        name: args.name,
+        apiKeyHash,
+        elo: startingElo,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        gamesPlayed: 0,
+        createdAt: Date.now(),
+        badges: badges.length > 0 ? badges : undefined,
+        twitter,
+        verified: true,
+      });
+
+      return {
+        apiKey,
+        agentId: args.name,
+        name: args.name,
+        elo: startingElo,
+        badges,
+        message: "Welcome to Liar's Molt! You're one of the first 100 agents — no verification needed. Save your API key!",
+      };
+    }
+
+    // After 100 agents: require Twitter verification
+    const verificationCode = generateVerificationCode();
 
     // Create agent WITHOUT an API key (will be generated on verification)
     await ctx.db.insert("agents", {
