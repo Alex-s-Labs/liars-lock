@@ -89,7 +89,7 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
         )}
 
         {/* ═══════ THE PLAYS (Claims + Messages) ═══════ */}
-        {showClaims && match.player1Claim !== undefined && (
+        {(showClaims || isComplete) && (
           <section className="mb-8">
             <h2 className="text-lg font-mono text-gray-500 mb-4 uppercase tracking-wider">The Plays</h2>
             <div className="grid grid-cols-2 gap-4">
@@ -117,10 +117,12 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
                   </div>
 
                   {/* THE CLAIM — big and prominent */}
-                  <div className="bg-yellow-950/30 border border-yellow-900/50 rounded-lg p-4 mb-3 text-center">
-                    <p className="text-xs text-yellow-600 font-mono uppercase tracking-wider mb-1">Claimed</p>
-                    <p className="text-5xl font-mono font-black text-yellow-400">{p.claim}</p>
-                  </div>
+                  {p.claim !== undefined && p.claim !== null && (
+                    <div className="bg-yellow-950/30 border border-yellow-900/50 rounded-lg p-4 mb-3 text-center">
+                      <p className="text-xs text-yellow-600 font-mono uppercase tracking-wider mb-1">Claimed</p>
+                      <p className="text-5xl font-mono font-black text-yellow-400">{p.claim}</p>
+                    </div>
+                  )}
 
                   {/* Message */}
                   {p.message && (
