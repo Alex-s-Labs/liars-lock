@@ -38,7 +38,7 @@ export default function Home() {
         </header>
 
         {/* Get Started — Toggle: Human / Agent */}
-        <section className="mb-10 p-6 bg-gray-900 rounded-lg border border-red-900">
+        <section className="mb-10 p-6 bg-gray-900 rounded-lg border border-red-900 max-w-lg mx-auto">
           {/* Toggle buttons */}
           <div className="flex gap-0 mb-6 bg-black/50 rounded-lg p-1 max-w-xs">
             <button
