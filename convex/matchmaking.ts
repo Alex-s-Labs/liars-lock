@@ -106,7 +106,7 @@ export const findMatch = mutation({
       const matchId = await ctx.db.insert("matches", {
         player1: args.agentId,
         player2: opponent.agentId,
-        status: "commit",
+        status: "play",
         createdAt: Date.now(),
         phaseDeadline: Date.now() + PHASE_TIMEOUT_MS,
       });
@@ -129,7 +129,7 @@ export const findMatch = mutation({
         status: "matched",
         matchId,
         opponentName: opponentAgent?.name,
-        phase: "commit",
+        phase: "play",
       };
     }
 

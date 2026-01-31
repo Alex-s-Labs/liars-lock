@@ -4,15 +4,6 @@ import { updateEloForMatch } from "./elo";
 
 const PHASE_TIMEOUT_MS = 60 * 1000; // 60 seconds
 
-// Hash a string using SHA-256
-async function sha256(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
 // Get match by ID
 export const get = query({
   args: {
@@ -32,6 +23,10 @@ export const get = query({
       throw new Error("Players not found");
     }
 
+    // Determine if requester is a player
+    const isPlayer1 = args.agentId === match.player1;
+    const isPlayer2 = args.agentId === match.player2;
+
     // Public info always visible
     const result: any = {
       _id: match._id,
@@ -42,21 +37,31 @@ export const get = query({
       completedAt: match.completedAt,
     };
 
-    // Determine if requester is a player
-    const isPlayer1 = args.agentId === match.player1;
-    const isPlayer2 = args.agentId === match.player2;
-    const isPlayer = isPlayer1 || isPlayer2;
-
-    // Show messages if both submitted (message phase complete)
-    if (match.player1Message && match.player2Message) {
-      result.player1Message = match.player1Message;
-      result.player2Message = match.player2Message;
+    if (match.status === "play") {
+      // During play phase: show whether each side has played (no details)
+      result.player1Played = match.player1Choice !== undefined;
+      result.player2Played = match.player2Choice !== undefined;
     }
 
-    // Show reveals if complete
+    if (match.status === "guess") {
+      // During guess phase: show opponent's claim + message (but NOT choice)
+      // Also show who has guessed
+      result.player1Claim = match.player1Claim;
+      result.player2Claim = match.player2Claim;
+      result.player1Message = match.player1Message;
+      result.player2Message = match.player2Message;
+      result.player1Guessed = match.player1Guess !== undefined;
+      result.player2Guessed = match.player2Guess !== undefined;
+    }
+
     if (match.status === "complete" || match.status === "forfeit") {
+      // Show everything
       result.player1Choice = match.player1Choice;
       result.player2Choice = match.player2Choice;
+      result.player1Claim = match.player1Claim;
+      result.player2Claim = match.player2Claim;
+      result.player1Message = match.player1Message;
+      result.player2Message = match.player2Message;
       result.player1Guess = match.player1Guess;
       result.player2Guess = match.player2Guess;
       result.winner = match.winner;
@@ -64,22 +69,18 @@ export const get = query({
       result.player2EloChange = match.player2EloChange;
     }
 
-    // Show your own commit status if you're a player
-    if (isPlayer) {
-      result.myCommitStatus = isPlayer1 ? !!match.player1Commit : !!match.player2Commit;
-      result.opponentCommitStatus = isPlayer1 ? !!match.player2Commit : !!match.player1Commit;
-    }
-
     return result;
   },
 });
 
-// Submit commitment
-export const commit = mutation({
+// Submit play: choice (hidden) + claim (visible) + optional message
+export const play = mutation({
   args: {
     matchId: v.id("matches"),
     agentId: v.id("agents"),
-    hash: v.string(),
+    choice: v.number(),
+    claim: v.number(),
+    message: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const match = await ctx.db.get(args.matchId);
@@ -87,8 +88,8 @@ export const commit = mutation({
       throw new Error("Match not found");
     }
 
-    if (match.status !== "commit") {
-      throw new Error("Not in commit phase");
+    if (match.status !== "play") {
+      throw new Error("Not in play phase");
     }
 
     // Check timeout
@@ -104,85 +105,43 @@ export const commit = mutation({
       throw new Error("Not a player in this match");
     }
 
-    // Update commitment
-    if (isPlayer1) {
-      if (match.player1Commit) {
-        throw new Error("Already committed");
-      }
-      await ctx.db.patch(match._id, { player1Commit: args.hash });
-    } else {
-      if (match.player2Commit) {
-        throw new Error("Already committed");
-      }
-      await ctx.db.patch(match._id, { player2Commit: args.hash });
+    // Validate choice and claim (must be 0 or 1)
+    if (args.choice !== 0 && args.choice !== 1) {
+      throw new Error("Choice must be 0 or 1");
     }
-
-    // Check if both committed
-    const updated = await ctx.db.get(args.matchId);
-    if (updated!.player1Commit && updated!.player2Commit) {
-      // Advance to message phase
-      await ctx.db.patch(match._id, {
-        status: "message",
-        phaseDeadline: Date.now() + PHASE_TIMEOUT_MS,
-      });
-    }
-
-    return { success: true };
-  },
-});
-
-// Submit message
-export const message = mutation({
-  args: {
-    matchId: v.id("matches"),
-    agentId: v.id("agents"),
-    message: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const match = await ctx.db.get(args.matchId);
-    if (!match) {
-      throw new Error("Match not found");
-    }
-
-    if (match.status !== "message") {
-      throw new Error("Not in message phase");
-    }
-
-    // Check timeout
-    if (Date.now() > match.phaseDeadline) {
-      await ctx.db.patch(match._id, { status: "forfeit" });
-      throw new Error("Phase timeout");
-    }
-
-    const isPlayer1 = args.agentId === match.player1;
-    const isPlayer2 = args.agentId === match.player2;
-
-    if (!isPlayer1 && !isPlayer2) {
-      throw new Error("Not a player in this match");
+    if (args.claim !== 0 && args.claim !== 1) {
+      throw new Error("Claim must be 0 or 1");
     }
 
     // Validate message length
-    if (args.message.length > 500) {
+    if (args.message && args.message.length > 500) {
       throw new Error("Message too long (max 500 chars)");
     }
 
-    // Update message
+    // Update fields
     if (isPlayer1) {
-      if (match.player1Message) {
-        throw new Error("Already sent message");
+      if (match.player1Choice !== undefined) {
+        throw new Error("Already played");
       }
-      await ctx.db.patch(match._id, { player1Message: args.message });
+      await ctx.db.patch(match._id, {
+        player1Choice: args.choice,
+        player1Claim: args.claim,
+        player1Message: args.message,
+      });
     } else {
-      if (match.player2Message) {
-        throw new Error("Already sent message");
+      if (match.player2Choice !== undefined) {
+        throw new Error("Already played");
       }
-      await ctx.db.patch(match._id, { player2Message: args.message });
+      await ctx.db.patch(match._id, {
+        player2Choice: args.choice,
+        player2Claim: args.claim,
+        player2Message: args.message,
+      });
     }
 
-    // Check if both sent messages
+    // Check if both played → advance to guess
     const updated = await ctx.db.get(args.matchId);
-    if (updated!.player1Message && updated!.player2Message) {
-      // Advance to guess phase
+    if (updated!.player1Choice !== undefined && updated!.player2Choice !== undefined) {
       await ctx.db.patch(match._id, {
         status: "guess",
         phaseDeadline: Date.now() + PHASE_TIMEOUT_MS,
@@ -241,94 +200,9 @@ export const guess = mutation({
       await ctx.db.patch(match._id, { player2Guess: args.guess });
     }
 
-    // Check if both guessed
+    // Check if both guessed → resolve immediately
     const updated = await ctx.db.get(args.matchId);
     if (updated!.player1Guess !== undefined && updated!.player2Guess !== undefined) {
-      // Advance to reveal phase
-      await ctx.db.patch(match._id, {
-        status: "reveal",
-        phaseDeadline: Date.now() + PHASE_TIMEOUT_MS,
-      });
-    }
-
-    return { success: true };
-  },
-});
-
-// Reveal choice and nonce
-export const reveal = mutation({
-  args: {
-    matchId: v.id("matches"),
-    agentId: v.id("agents"),
-    choice: v.number(),
-    nonce: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const match = await ctx.db.get(args.matchId);
-    if (!match) {
-      throw new Error("Match not found");
-    }
-
-    if (match.status !== "reveal") {
-      throw new Error("Not in reveal phase");
-    }
-
-    // Check timeout
-    if (Date.now() > match.phaseDeadline) {
-      await ctx.db.patch(match._id, { status: "forfeit" });
-      throw new Error("Phase timeout");
-    }
-
-    const isPlayer1 = args.agentId === match.player1;
-    const isPlayer2 = args.agentId === match.player2;
-
-    if (!isPlayer1 && !isPlayer2) {
-      throw new Error("Not a player in this match");
-    }
-
-    // Validate choice (must be 0 or 1)
-    if (args.choice !== 0 && args.choice !== 1) {
-      throw new Error("Choice must be 0 or 1");
-    }
-
-    // Verify hash
-    const expectedHash = await sha256(`${args.choice}:${args.nonce}`);
-    const actualHash = isPlayer1 ? match.player1Commit : match.player2Commit;
-
-    if (expectedHash !== actualHash) {
-      // Cheater! They lose automatically
-      const winner = isPlayer1 ? match.player2 : match.player1;
-      await ctx.db.patch(match._id, {
-        status: "complete",
-        winner,
-        completedAt: Date.now(),
-      });
-      await updateEloForMatch(ctx, args.matchId);
-      return { success: false, error: "Hash verification failed - you cheated and lost" };
-    }
-
-    // Update reveal
-    if (isPlayer1) {
-      if (match.player1Choice !== undefined) {
-        throw new Error("Already revealed");
-      }
-      await ctx.db.patch(match._id, {
-        player1Choice: args.choice,
-        player1Nonce: args.nonce,
-      });
-    } else {
-      if (match.player2Choice !== undefined) {
-        throw new Error("Already revealed");
-      }
-      await ctx.db.patch(match._id, {
-        player2Choice: args.choice,
-        player2Nonce: args.nonce,
-      });
-    }
-
-    // Check if both revealed
-    const updated = await ctx.db.get(args.matchId);
-    if (updated!.player1Choice !== undefined && updated!.player2Choice !== undefined) {
       // Resolve match
       const p1GuessCorrect = updated!.player1Guess === updated!.player2Choice;
       const p2GuessCorrect = updated!.player2Guess === updated!.player1Choice;
@@ -343,7 +217,7 @@ export const reveal = mutation({
       }
 
       const now = Date.now();
-      
+
       await ctx.db.patch(match._id, {
         status: "complete",
         winner,
@@ -353,7 +227,7 @@ export const reveal = mutation({
       // Update lastPlayedAt for both players
       const player1 = await ctx.db.get(match.player1);
       const player2 = await ctx.db.get(match.player2);
-      
+
       if (player1) {
         await ctx.db.patch(match.player1, { lastPlayedAt: now });
       }
@@ -369,7 +243,7 @@ export const reveal = mutation({
   },
 });
 
-// Forfeit a match (if opponent times out or doesn't show)
+// Check for timeouts and forfeit if deadline passed
 export const checkTimeout = mutation({
   args: {
     matchId: v.id("matches"),
@@ -386,19 +260,12 @@ export const checkTimeout = mutation({
 
     // Check if deadline passed
     if (Date.now() > match.phaseDeadline) {
-      // Determine who forfeited
       let winner: typeof match.winner = "draw";
 
-      if (match.status === "commit") {
-        if (!match.player1Commit && match.player2Commit) {
+      if (match.status === "play") {
+        if (match.player1Choice === undefined && match.player2Choice !== undefined) {
           winner = match.player2;
-        } else if (match.player1Commit && !match.player2Commit) {
-          winner = match.player1;
-        }
-      } else if (match.status === "message") {
-        if (!match.player1Message && match.player2Message) {
-          winner = match.player2;
-        } else if (match.player1Message && !match.player2Message) {
+        } else if (match.player1Choice !== undefined && match.player2Choice === undefined) {
           winner = match.player1;
         }
       } else if (match.status === "guess") {
@@ -407,33 +274,25 @@ export const checkTimeout = mutation({
         } else if (match.player1Guess !== undefined && match.player2Guess === undefined) {
           winner = match.player1;
         }
-      } else if (match.status === "reveal") {
-        if (match.player1Choice === undefined && match.player2Choice !== undefined) {
-          winner = match.player2;
-        } else if (match.player1Choice !== undefined && match.player2Choice === undefined) {
-          winner = match.player1;
-        }
       }
 
       const now = Date.now();
-      
+
       await ctx.db.patch(match._id, {
         status: "forfeit",
         winner,
         completedAt: now,
       });
 
-      // Update lastPlayedAt for both players if match got far enough
-      if (match.status !== "commit") {
-        const player1 = await ctx.db.get(match.player1);
-        const player2 = await ctx.db.get(match.player2);
-        
-        if (player1) {
-          await ctx.db.patch(match.player1, { lastPlayedAt: now });
-        }
-        if (player2) {
-          await ctx.db.patch(match.player2, { lastPlayedAt: now });
-        }
+      // Update lastPlayedAt for both players
+      const player1 = await ctx.db.get(match.player1);
+      const player2 = await ctx.db.get(match.player2);
+
+      if (player1) {
+        await ctx.db.patch(match.player1, { lastPlayedAt: now });
+      }
+      if (player2) {
+        await ctx.db.patch(match.player2, { lastPlayedAt: now });
       }
 
       // Update Elo if there was a winner

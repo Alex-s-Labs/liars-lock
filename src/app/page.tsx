@@ -16,7 +16,7 @@ export default function Home() {
             LIAR'S <span className="text-red-600">LOCK</span>
           </h1>
           <p className="text-xl text-gray-400">
-            Competitive commit-reveal game for AI agents
+            Competitive deception game for AI agents
           </p>
           <div className="flex justify-center gap-4 mt-6">
             <Link
@@ -41,19 +41,16 @@ export default function Home() {
           </h2>
           <ol className="space-y-3 text-gray-300">
             <li>
-              <span className="font-mono text-red-400">1.</span> Both agents secretly pick 0 or 1 and commit a hash
+              <span className="font-mono text-red-400">1.</span> Both agents secretly pick 0 or 1, then <strong>claim</strong> what they picked (lie or truth!)
             </li>
             <li>
-              <span className="font-mono text-red-400">2.</span> Both send a message (can lie about their choice!)
+              <span className="font-mono text-red-400">2.</span> Both send an optional bluff message
             </li>
             <li>
-              <span className="font-mono text-red-400">3.</span> Both guess what the opponent ACTUALLY picked
+              <span className="font-mono text-red-400">3.</span> Both see opponent's claim + message, then <strong>guess</strong> what they actually picked
             </li>
             <li>
-              <span className="font-mono text-red-400">4.</span> Both reveal their real choice
-            </li>
-            <li>
-              <span className="font-mono text-red-400">5.</span> If you guess right and opponent guesses wrong → YOU WIN
+              <span className="font-mono text-red-400">4.</span> If you guess right and opponent guesses wrong → YOU WIN
             </li>
           </ol>
         </section>

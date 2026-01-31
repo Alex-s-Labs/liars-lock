@@ -31,19 +31,23 @@ export default defineSchema({
     player1: v.id("agents"),
     player2: v.id("agents"),
     status: v.union(
+      v.literal("play"),
+      v.literal("guess"),
+      v.literal("complete"),
+      v.literal("forfeit"),
+      // Legacy statuses (kept for backward compat with old match data)
       v.literal("commit"),
       v.literal("message"),
-      v.literal("guess"),
-      v.literal("reveal"),
-      v.literal("complete"),
-      v.literal("forfeit")
+      v.literal("reveal")
     ),
 
-    // Commit phase
-    player1Commit: v.optional(v.string()),
-    player2Commit: v.optional(v.string()),
+    // Play phase — choice is hidden, claim is visible
+    player1Choice: v.optional(v.number()),
+    player2Choice: v.optional(v.number()),
+    player1Claim: v.optional(v.number()),
+    player2Claim: v.optional(v.number()),
 
-    // Message phase
+    // Messages (submitted during play phase)
     player1Message: v.optional(v.string()),
     player2Message: v.optional(v.string()),
 
@@ -51,10 +55,10 @@ export default defineSchema({
     player1Guess: v.optional(v.number()),
     player2Guess: v.optional(v.number()),
 
-    // Reveal phase
-    player1Choice: v.optional(v.number()),
+    // Legacy fields (kept for backward compat with old match data)
+    player1Commit: v.optional(v.string()),
+    player2Commit: v.optional(v.string()),
     player1Nonce: v.optional(v.string()),
-    player2Choice: v.optional(v.number()),
     player2Nonce: v.optional(v.string()),
 
     // Result

@@ -1,14 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createHash } from "crypto";
+import { describe, it, expect, beforeAll } from "vitest";
 
 // Integration tests against the running dev server + real Convex
 // Run with: npm test (requires dev server on TEST_BASE_URL or localhost:3001)
 
 const BASE = process.env.TEST_BASE_URL || "http://localhost:3001";
-
-function sha256(input: string): string {
-  return createHash("sha256").update(input).digest("hex");
-}
 
 async function register(name: string) {
   const res = await fetch(`${BASE}/api/register`, {
@@ -40,20 +35,11 @@ async function getMatch(matchId: string, apiKey?: string) {
   return res.json();
 }
 
-async function commit(matchId: string, apiKey: string, hash: string) {
-  const res = await fetch(`${BASE}/api/match/${matchId}/commit`, {
+async function play(matchId: string, apiKey: string, choice: number, claim: number, message?: string) {
+  const res = await fetch(`${BASE}/api/match/${matchId}/play`, {
     method: "POST",
     headers: authHeaders(apiKey),
-    body: JSON.stringify({ hash }),
-  });
-  return res.json();
-}
-
-async function sendMessage(matchId: string, apiKey: string, message: string) {
-  const res = await fetch(`${BASE}/api/match/${matchId}/message`, {
-    method: "POST",
-    headers: authHeaders(apiKey),
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ choice, claim, message }),
   });
   return res.json();
 }
@@ -63,15 +49,6 @@ async function guess(matchId: string, apiKey: string, guessVal: number) {
     method: "POST",
     headers: authHeaders(apiKey),
     body: JSON.stringify({ guess: guessVal }),
-  });
-  return res.json();
-}
-
-async function reveal(matchId: string, apiKey: string, choice: number, nonce: string) {
-  const res = await fetch(`${BASE}/api/match/${matchId}/reveal`, {
-    method: "POST",
-    headers: authHeaders(apiKey),
-    body: JSON.stringify({ choice, nonce }),
   });
   return res.json();
 }
@@ -146,7 +123,7 @@ describe("Matchmaking", () => {
     const r2 = await findMatch(a2.apiKey);
     expect(r2.status).toBe("matched");
     expect(r2.matchId).toBeTruthy();
-    expect(r2.phase).toBe("commit");
+    expect(r2.phase).toBe("play");
   });
 
   it("returns existing match if already in one", async () => {
@@ -177,79 +154,64 @@ describe("Full Game Flow", () => {
     matchId = r2.matchId;
   });
 
-  it("starts in commit phase", async () => {
+  it("starts in play phase", async () => {
     const match = await getMatch(matchId, a1.apiKey);
-    expect(match.status).toBe("commit");
-    expect(match.myCommitStatus).toBe(false);
+    expect(match.status).toBe("play");
+    expect(match.player1Played).toBe(false);
+    expect(match.player2Played).toBe(false);
   });
 
-  it("accepts commits and advances to message phase", async () => {
-    const hash1 = sha256("1:nonce1");
-    const hash2 = sha256("0:nonce2");
+  it("accepts plays and advances to guess phase", async () => {
+    // a1 picks 1, claims 0 (lying), with a message
+    const p1 = await play(matchId, a1.apiKey, 1, 0, "I picked 0 for sure!");
+    expect(p1.success).toBe(true);
 
-    const c1 = await commit(matchId, a1.apiKey, hash1);
-    expect(c1.success).toBe(true);
-
-    // Match should still be in commit until both commit
+    // Match should still be in play until both play
     const midMatch = await getMatch(matchId, a1.apiKey);
-    expect(midMatch.status).toBe("commit");
-    expect(midMatch.myCommitStatus).toBe(true);
-    expect(midMatch.opponentCommitStatus).toBe(false);
+    expect(midMatch.status).toBe("play");
+    expect(midMatch.player1Played).toBe(true);
+    expect(midMatch.player2Played).toBe(false);
 
-    const c2 = await commit(matchId, a2.apiKey, hash2);
-    expect(c2.success).toBe(true);
-
-    const match = await getMatch(matchId);
-    expect(match.status).toBe("message");
-  });
-
-  it("rejects double commit", async () => {
-    const res = await fetch(`${BASE}/api/match/${matchId}/commit`, {
-      method: "POST",
-      headers: authHeaders(a1.apiKey),
-      body: JSON.stringify({ hash: "duplicate" }),
-    });
-    const data = await res.json();
-    expect(data.error).toMatch(/not in commit phase/i);
-  });
-
-  it("accepts messages and advances to guess phase", async () => {
-    const m1 = await sendMessage(matchId, a1.apiKey, "I chose 1!");
-    expect(m1.success).toBe(true);
-
-    const m2 = await sendMessage(matchId, a2.apiKey, "Or did you?");
-    expect(m2.success).toBe(true);
+    // a2 picks 0, claims 0 (truth), with a message
+    const p2 = await play(matchId, a2.apiKey, 0, 0, "Also picked 0");
+    expect(p2.success).toBe(true);
 
     const match = await getMatch(matchId);
     expect(match.status).toBe("guess");
-    expect(match.player1Message).toBeTruthy();
-    expect(match.player2Message).toBeTruthy();
+    // Claims and messages should be visible now
+    expect(match.player1Claim).toBe(0);
+    expect(match.player2Claim).toBe(0);
+    expect(match.player1Message).toBe("I picked 0 for sure!");
+    expect(match.player2Message).toBe("Also picked 0");
   });
 
-  it("accepts guesses and advances to reveal phase", async () => {
-    // a1 guesses opponent chose 0 (correct!)
+  it("rejects double play", async () => {
+    const res = await fetch(`${BASE}/api/match/${matchId}/play`, {
+      method: "POST",
+      headers: authHeaders(a1.apiKey),
+      body: JSON.stringify({ choice: 0, claim: 0 }),
+    });
+    const data = await res.json();
+    expect(data.error).toMatch(/not in play phase/i);
+  });
+
+  it("accepts guesses and resolves match", async () => {
+    // a1 guesses opponent's actual choice is 0 (correct! a2 chose 0)
     const g1 = await guess(matchId, a1.apiKey, 0);
     expect(g1.success).toBe(true);
 
-    // a2 guesses opponent chose 0 (wrong — a1 chose 1)
+    // a2 guesses opponent's actual choice is 0 (wrong! a1 chose 1)
     const g2 = await guess(matchId, a2.apiKey, 0);
     expect(g2.success).toBe(true);
 
     const match = await getMatch(matchId);
-    expect(match.status).toBe("reveal");
-  });
-
-  it("validates reveals and resolves match", async () => {
-    const r1 = await reveal(matchId, a1.apiKey, 1, "nonce1");
-    expect(r1.success).toBe(true);
-
-    const r2 = await reveal(matchId, a2.apiKey, 0, "nonce2");
-    expect(r2.success).toBe(true);
-
-    const match = await getMatch(matchId);
     expect(match.status).toBe("complete");
-    // a1 guessed correctly (opponent=0), a2 guessed wrong (guessed 0, was 1)
+    // a1 guessed correctly, a2 guessed wrong → a1 wins
     expect(match.winner).toBeTruthy();
+    expect(match.player1Choice).toBe(1);
+    expect(match.player2Choice).toBe(0);
+    expect(match.player1Claim).toBe(0);
+    expect(match.player2Claim).toBe(0);
     expect(match.player1EloChange).toBeDefined();
     expect(match.player2EloChange).toBeDefined();
   });
@@ -279,16 +241,12 @@ describe("Draw scenario", () => {
     const r = await findMatch(a2.apiKey);
     const mid = r.matchId;
 
-    // Both choose 1
-    await commit(mid, a1.apiKey, sha256("1:d1"));
-    await commit(mid, a2.apiKey, sha256("1:d2"));
-    await sendMessage(mid, a1.apiKey, "hi");
-    await sendMessage(mid, a2.apiKey, "hi");
+    // Both choose 1, both claim 1 (truth)
+    await play(mid, a1.apiKey, 1, 1, "hi");
+    await play(mid, a2.apiKey, 1, 1, "hi");
     // Both guess 1 (both correct)
     await guess(mid, a1.apiKey, 1);
     await guess(mid, a2.apiKey, 1);
-    await reveal(mid, a1.apiKey, 1, "d1");
-    await reveal(mid, a2.apiKey, 1, "d2");
 
     const match = await getMatch(mid);
     expect(match.status).toBe("complete");
@@ -305,55 +263,17 @@ describe("Draw scenario", () => {
     const r = await findMatch(a2.apiKey);
     const mid = r.matchId;
 
-    // a1 chooses 1, a2 chooses 0
-    await commit(mid, a1.apiKey, sha256("1:w1"));
-    await commit(mid, a2.apiKey, sha256("0:w2"));
-    await sendMessage(mid, a1.apiKey, "bluff");
-    await sendMessage(mid, a2.apiKey, "bluff");
-    // Both guess wrong: a1 guesses 1 (opponent chose 0), a2 guesses 1 (opponent chose 1, actually correct... let me fix)
-    // a1 chose 1, a2 chose 0
+    // a1 chooses 1 (claims 0), a2 chooses 0 (claims 1)
+    await play(mid, a1.apiKey, 1, 0, "bluff");
+    await play(mid, a2.apiKey, 0, 1, "bluff");
     // a1 guesses opponent chose 1 (wrong, they chose 0)
     // a2 guesses opponent chose 0 (wrong, they chose 1)
     await guess(mid, a1.apiKey, 1);
     await guess(mid, a2.apiKey, 0);
-    await reveal(mid, a1.apiKey, 1, "w1");
-    await reveal(mid, a2.apiKey, 0, "w2");
 
     const match = await getMatch(mid);
     expect(match.status).toBe("complete");
     expect(match.winner).toBe("draw");
-  });
-});
-
-describe("Cheating detection", () => {
-  it("rejects mismatched reveal hash", async () => {
-    const a1 = await register(`Cheat1_${RUN_ID}`);
-    const a2 = await register(`Cheat2_${RUN_ID}`);
-
-    await findMatch(a1.apiKey);
-    const r = await findMatch(a2.apiKey);
-    const mid = r.matchId;
-
-    // a1 commits to choice 1 but will try to reveal 0
-    await commit(mid, a1.apiKey, sha256("1:cheatnonce"));
-    await commit(mid, a2.apiKey, sha256("0:honest"));
-    await sendMessage(mid, a1.apiKey, "trust me");
-    await sendMessage(mid, a2.apiKey, "ok");
-    await guess(mid, a1.apiKey, 0);
-    await guess(mid, a2.apiKey, 0);
-
-    // a1 tries to reveal choice=0 (committed to 1) — hash won't match
-    const res = await fetch(`${BASE}/api/match/${mid}/reveal`, {
-      method: "POST",
-      headers: authHeaders(a1.apiKey),
-      body: JSON.stringify({ choice: 0, nonce: "cheatnonce" }),
-    });
-    const data = await res.json();
-    expect(data.error).toMatch(/cheated/i);
-
-    // Match should be complete with a2 winning
-    const match = await getMatch(mid);
-    expect(match.status).toBe("complete");
   });
 });
 

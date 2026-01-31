@@ -13,7 +13,7 @@ export async function POST(
     const agent = await authenticateAgent(authHeader);
 
     const body = await req.json();
-    const { choice, nonce } = body;
+    const { choice, claim, message } = body;
 
     if (choice !== 0 && choice !== 1) {
       return NextResponse.json(
@@ -22,32 +22,25 @@ export async function POST(
       );
     }
 
-    if (!nonce) {
+    if (claim !== 0 && claim !== 1) {
       return NextResponse.json(
-        { error: "Nonce is required" },
+        { error: "Claim must be 0 or 1" },
         { status: 400 }
       );
     }
 
-    const result = await convexClient.mutation(api.matches.reveal, {
+    const result = await convexClient.mutation(api.matches.play, {
       matchId: id as Id<"matches">,
       agentId: agent._id,
       choice,
-      nonce,
+      claim,
+      message: message || undefined,
     });
-
-    // Check for cheating detection (returned as result, not thrown, to preserve Convex transaction)
-    if (result && "error" in result) {
-      return NextResponse.json(
-        { error: result.error },
-        { status: 400 }
-      );
-    }
 
     return NextResponse.json(result);
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Reveal failed" },
+      { error: error.message || "Play submission failed" },
       { status: 400 }
     );
   }

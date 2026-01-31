@@ -82,41 +82,82 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
         <div className="mb-8 p-6 bg-gray-900 rounded-lg border border-red-900">
           <h2 className="text-2xl font-bold mb-4 font-mono text-red-500">Status</h2>
           <p className="text-xl font-mono uppercase">
-            {match.status === "commit" && "⏳ Waiting for commits..."}
-            {match.status === "message" && "💬 Waiting for messages..."}
+            {match.status === "play" && "🎲 Waiting for plays..."}
             {match.status === "guess" && "🤔 Waiting for guesses..."}
-            {match.status === "reveal" && "🔓 Waiting for reveals..."}
             {match.status === "complete" && "✅ Complete"}
             {match.status === "forfeit" && "⚠️ Forfeit"}
           </p>
         </div>
 
-        {/* Messages (if both submitted) */}
-        {match.player1Message && match.player2Message && (
+        {/* Play status */}
+        {match.status === "play" && (
           <div className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 font-mono text-red-500">Messages</h2>
+            <h2 className="text-2xl font-bold mb-4 font-mono text-red-500">Play Phase</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-gray-900 rounded border border-gray-800">
-                <p className="text-sm text-gray-500 mb-2">{match.player1.name}:</p>
-                <p className="font-mono">{match.player1Message}</p>
+                <p className="text-sm text-gray-500 mb-2">{match.player1.name}</p>
+                <p className="font-mono">{match.player1Played ? "✅ Played" : "⏳ Waiting..."}</p>
               </div>
               <div className="p-4 bg-gray-900 rounded border border-gray-800">
-                <p className="text-sm text-gray-500 mb-2">{match.player2.name}:</p>
-                <p className="font-mono">{match.player2Message}</p>
+                <p className="text-sm text-gray-500 mb-2">{match.player2.name}</p>
+                <p className="font-mono">{match.player2Played ? "✅ Played" : "⏳ Waiting..."}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Claims & Messages (visible during guess phase) */}
+        {(match.status === "guess" || isComplete) && match.player1Claim !== undefined && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 font-mono text-red-500">Claims & Messages</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-gray-900 rounded border border-gray-800">
+                <p className="text-sm text-gray-500 mb-2">{match.player1.name} claims:</p>
+                <p className="text-3xl font-mono font-bold text-yellow-400">{match.player1Claim}</p>
+                {match.player1Message && (
+                  <p className="mt-2 font-mono text-gray-300">"{match.player1Message}"</p>
+                )}
+              </div>
+              <div className="p-4 bg-gray-900 rounded border border-gray-800">
+                <p className="text-sm text-gray-500 mb-2">{match.player2.name} claims:</p>
+                <p className="text-3xl font-mono font-bold text-yellow-400">{match.player2Claim}</p>
+                {match.player2Message && (
+                  <p className="mt-2 font-mono text-gray-300">"{match.player2Message}"</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Guess status during guess phase */}
+        {match.status === "guess" && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 font-mono text-red-500">Guess Phase</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-gray-900 rounded border border-gray-800">
+                <p className="text-sm text-gray-500 mb-2">{match.player1.name}</p>
+                <p className="font-mono">{match.player1Guessed ? "✅ Guessed" : "⏳ Thinking..."}</p>
+              </div>
+              <div className="p-4 bg-gray-900 rounded border border-gray-800">
+                <p className="text-sm text-gray-500 mb-2">{match.player2.name}</p>
+                <p className="font-mono">{match.player2Guessed ? "✅ Guessed" : "⏳ Thinking..."}</p>
               </div>
             </div>
           </div>
         )}
 
         {/* Results (if complete) */}
-        {isComplete && (
+        {isComplete && match.player1Choice !== undefined && (
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4 font-mono text-red-500">Results</h2>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="p-4 bg-gray-900 rounded border border-gray-800">
-                <p className="text-sm text-gray-500 mb-2">Actual Choice:</p>
-                <p className="text-3xl font-mono font-bold">
-                  {match.player1Choice}
+                <p className="text-sm text-gray-500 mb-1">Claimed:</p>
+                <p className="text-xl font-mono text-yellow-400">{match.player1Claim}</p>
+                <p className="text-sm text-gray-500 mt-2 mb-1">Actual Choice:</p>
+                <p className="text-3xl font-mono font-bold">{match.player1Choice}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {match.player1Claim === match.player1Choice ? "🟢 Told the truth" : "🔴 Lied!"}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">Guessed:</p>
                 <p className="text-xl font-mono">{match.player1Guess}</p>
@@ -129,9 +170,12 @@ export default function MatchPage({ params }: { params: Promise<{ id: string }> 
                 </p>
               </div>
               <div className="p-4 bg-gray-900 rounded border border-gray-800">
-                <p className="text-sm text-gray-500 mb-2">Actual Choice:</p>
-                <p className="text-3xl font-mono font-bold">
-                  {match.player2Choice}
+                <p className="text-sm text-gray-500 mb-1">Claimed:</p>
+                <p className="text-xl font-mono text-yellow-400">{match.player2Claim}</p>
+                <p className="text-sm text-gray-500 mt-2 mb-1">Actual Choice:</p>
+                <p className="text-3xl font-mono font-bold">{match.player2Choice}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {match.player2Claim === match.player2Choice ? "🟢 Told the truth" : "🔴 Lied!"}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">Guessed:</p>
                 <p className="text-xl font-mono">{match.player2Guess}</p>
