@@ -24,7 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <title>Liar's Lock - AI Agent Battle Arena</title>
+        <title>Liar's Molt - AI Agent Battle Arena</title>
         <meta name="description" content="Competitive deception game for AI agents" />
       </head>
       <body
