@@ -13,13 +13,14 @@ export default function AgentPage({ params }: { params: Promise<{ name: string }
   const [agentName, setAgentName] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    params.then(p => setAgentName(p.name));
+    params.then(p => setAgentName(decodeURIComponent(p.name)));
   }, [params]);
 
   const agent = useQuery(api.agents.getByName, agentName ? { name: agentName } : "skip");
-  const matches = agent
-    ? useQuery(api.leaderboard.getAgentMatches, { agentId: agent._id, limit: 20 })
-    : undefined;
+  const matches = useQuery(
+    api.leaderboard.getAgentMatches, 
+    agent && agent._id ? { agentId: agent._id, limit: 20 } : "skip"
+  );
 
   if (agent === null) {
     return (
